@@ -1,0 +1,62 @@
+# Foolish -- the Fooli shell, has nothing special.
+
+Fooli is modified from the shell of xv6 and have the similar structure
+but with many modification to make it more flexible, especially the
+parsing phase.
+
+But for many reason, it is not finished...
+
+0. Read user defined prompt
+	Run the shell by PROMPT="xxx" ./foolish
+	And the shell read it by getenv("PROMPT") in its initializing phase
+
+1. Support I/O redirection, pipeline, subshell and list(; & || &&)
+	Syntax:
+		RED := NULL | { < > >> } FILENAME RED
+		EXEC := { (COMMAND) | EXECUTABLE ARGS } RED
+		JOB := EXEC | EXEC '|' JOB
+		COMMAND := JOB { \0 ; & || && } | JOB { ; & || && } COMMAND
+	Instructions are executed in the unit of job, and 5 symbols (";&AO" and '\0')
+are separators for jobs.
+	When execute command like "EXECUTABLE ARGS RED '|' JOB", RED in previous
+command will close write end of the pipeline, and hence JOB at the read end will
+receive an EOF.
+	Have both constructors and destructors for various kind of commands, the shell
+of xv6 only has constructors since it calls parsecmd() in child process, all memory
+allocated will be freed automatically. In fooli, free() is called after runcmd().
+	
+1.5 Error handling
+	the parsing phase will check and report the illegal input.
+
+2. Try to handle built-in commands as ordinary ones
+	Builtin are functions with the form buildin_xx(int argc, char **argv),
+since they modify internal states of the shell itself, fork() is not wanted.
+	So, fork as late as possible.
+	To do this, we choose to fork() inside runpipe(), and it will recursively
+call itself. Making sure that all child will have the shell as its direct parent.
+So that all SIGCHLD will be send to and caught by the shell.
+	As for the "EXECUTABLE ARGS RED" situation, Redirection infomation is reduced
+and packed in one layer.
+	However, the pipe command seems to be born long for fork(), so the shell
+ignores the builtin command encountered in pipeline. The negligence of builtin is
+from the perspective of the final effect, the shell still invoke corresponding
+builtin_xx function, but in a child process created by fork(), eventually no affect
+will be caused on parent. Also, in this scenario, since no exec function is called,
+it does not exit. Instead, the subshell itself will return from runcmd() and try to
+parse the following command, parallel with its parent! So exit() must be added to
+someplace to guarantee that subshells will never return.
+
+2.5 What builtin to implement
+	cd exit
+
+3. Capable of doing basic job control
+	
+	!!!Sadly this is still far from being accomplished.!!!
+
+	Fooli has a vague idea on jobs, and will set the process in one job to a new process
+group. But it can not handle the controlling terminal affair...
+	Jobs can be put in the background by using '&', but as foreground process group 
+does not have access to terminal io, this does not make many sense, and only means that
+you can still type in and run other commands when as the background jobs running in the 
+background.
+	subshell shall not access parent's job. And will flush all job control data structure
